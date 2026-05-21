@@ -26,6 +26,7 @@ from datasets import (
 from models.gpt2 import GPT2Model
 
 from optimizer import AdamW
+from evaluation import test_sonnet
 
 TQDM_DISABLE = False
 
@@ -50,9 +51,18 @@ class SonnetGPT(nn.Module):
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    # By default, fine-tune the full model. TODO: this is maybe not idea.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
+    if args.fine_tune_mode == 'full':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+    elif args.fine_tune_mode == 'last-layer':
+      for param in self.gpt.parameters():
+        param.requires_grad = False
+      for param in self.gpt.gpt_layers[-1].parameters():
+        param.requires_grad = True
+      for param in self.gpt.final_layer_norm.parameters():
+        param.requires_grad = True
+    else:
+      raise ValueError(f'Unsupported fine-tune mode: {args.fine_tune_mode}')
 
   def forward(self, input_ids, attention_mask):
     """
@@ -60,8 +70,11 @@ class SonnetGPT(nn.Module):
     not just the last token! This will allow our model to learn the natural language distribution that composes sonnets,
     not just the distribution over next tokens for the last token!
     """
-    ### YOUR CODE HERE
-    raise NotImplementedError
+    #YOUR CODE HERE
+    outputs = self.gpt(input_ids, attention_mask)
+    hidden_states = outputs['last_hidden_state']
+    logits = self.gpt.hidden_state_to_token(hidden_states)
+    return logits
 
 
   def get_device(self):
@@ -182,6 +195,12 @@ def train(args):
       print(f'{batch[1]}{output[1]}\n\n')
 
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
+    try:
+      chrf_score = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
+      print(f"Epoch {epoch}: chrF score on generated sonnets :: {chrf_score:.2f}")
+    except Exception as e:
+      print(f"Skipping epoch chrF evaluation: {e}")
+    print('Saving the model...')
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
 
 
@@ -216,6 +235,7 @@ def generate_submission_sonnets(args):
       f.write(sonnet[1])
 
 
+
 def get_args():
   parser = argparse.ArgumentParser()
 
@@ -236,6 +256,10 @@ def get_args():
   parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
   parser.add_argument("--model_size", type=str, help="The model size as specified on hugging face.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], default='gpt2')
+  parser.add_argument("--fine_tune_mode", type=str, choices=['full', 'last-layer'], default='full',
+                      help="Whether to fine-tune the full GPT model or only the last transformer layer.")
+  parser.add_argument("--true_sonnet_path", type=str, default="data/TRUE_sonnets_held_out_dev.txt",
+                      help="Gold sonnets file used to compute chrF for generated output.")
 
   args = parser.parse_args()
   return args
@@ -266,3 +290,10 @@ if __name__ == "__main__":
   seed_everything(args.seed)  # Fix the seed for reproducibility.
   train(args)
   generate_submission_sonnets(args)
+  try:
+    score = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
+    print(f"Final chrF score: {score:.2f}")
+  except Exception as e:
+    print(f"Could not compute chrF via evaluation.test_sonnet: {e}")
+
+ 
