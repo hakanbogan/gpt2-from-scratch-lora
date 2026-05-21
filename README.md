@@ -10,25 +10,34 @@ detection and sonnet generation. You will implement extensions to improve your m
 
 In broad strokes, Part 1 of this project targets:
 
-* modules/attention.py: Missing code blocks.
-* modules/gpt2_layer.py: Missing code blocks.
-* models/gpt2.py: Missing code blocks.
-* classifier.py: Missing code blocks.
-* optimizer.py: Missing code blocks.
+* modules/attention.py: Missing code blocks.✅
+* modules/gpt2_layer.py: Missing code blocks.✅
+* models/gpt2.py: Missing code blocks.✅
+* classifier.py: Missing code blocks.✅
+* optimizer.py: Missing code blocks.✅
 
 To test Part 1, you will run:
 
-* `optimizer_test.py`: To test your implementation of `optimizer.py`.
-* `sanity_check.py`: To test your implementation of GPT models.
-* `classifier.py` : To perform sentiment classification using your models.
+* `optimizer_test.py`: To test your implementation of `optimizer.py`.✅
+* `sanity_check.py`: To test your implementation of GPT models.✅
+* `classifier.py` : To perform sentiment classification using your models.✅
+  ** Last-Layer-output in results dic✅
+  ** Full-Model(layer)-output in results dic✅
 
 In Part 2 of this project, you will use GPT2 (via cloze-style classification) detect if one sentence is a paraphrase of 
 another as well as generate sonnets via autoregressive language modeling.  
 
 To test Part 2, you will run:
 
-* `paraphrase_detection.py`: To perform paraphrase detection. 
+* `paraphrase_detection.py`: To perform paraphrase detection. ✅ binary classifition
+  * * 2-PD in results ✅
 * `sonnet_generation.py`: To perform sonnet generation.
+  ** it can be runnable✅
+  ** must be added Chrf and Blue measurement.
+
+Part 3, One extension must be added and be modified:
+* look at 7.4 extension 
+
 
 Important: Adjust training hyperparameters, particularly batch size, according to your GPU's specifications to optimize performance and prevent out-of-memory errors.
 
