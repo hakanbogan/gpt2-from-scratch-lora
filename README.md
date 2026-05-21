@@ -29,7 +29,8 @@ another as well as generate sonnets via autoregressive language modeling.
 
 To test Part 2, you will run:
 
-* `paraphrase_detection.py`: To perform paraphrase detection. ✅ binary classifition
+* `paraphrase_detection.py`: To perform paraphrase detection.
+  * ✅ binary classification 'yes' or 'no'
   *  2-PD in results ✅
 * `sonnet_generation.py`: To perform sonnet generation.
   ** it can be runnable✅
