@@ -1,0 +1,12 @@
+*pretest
+*~
+*.pyc
+*.pt
+*.pkl
+.idea/
+out/
+__pycache__/
+*.zip
+.DS_Store
+.vscode/
+.ipynb_checkpoints/
