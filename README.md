@@ -21,8 +21,8 @@ To test Part 1, you will run:
 * `optimizer_test.py`: To test your implementation of `optimizer.py`.✅
 * `sanity_check.py`: To test your implementation of GPT models.✅
 * `classifier.py` : To perform sentiment classification using your models.✅
-  ** Last-Layer-output in results dic✅
-  ** Full-Model(layer)-output in results dic✅
+  * Last-Layer-output in results dic✅
+  * Full-Model(layer)-output in results dic✅
 
 In Part 2 of this project, you will use GPT2 (via cloze-style classification) detect if one sentence is a paraphrase of 
 another as well as generate sonnets via autoregressive language modeling.  
@@ -30,7 +30,7 @@ another as well as generate sonnets via autoregressive language modeling.
 To test Part 2, you will run:
 
 * `paraphrase_detection.py`: To perform paraphrase detection. ✅ binary classifition
-  * * 2-PD in results ✅
+  *  2-PD in results ✅
 * `sonnet_generation.py`: To perform sonnet generation.
   ** it can be runnable✅
   ** must be added Chrf and Blue measurement.
