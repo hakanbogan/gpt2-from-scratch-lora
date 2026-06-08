@@ -11,7 +11,7 @@ import torch
 from sklearn.metrics import f1_score, accuracy_score
 from tqdm import tqdm
 import numpy as np
-from sacrebleu.metrics import CHRF
+from sacrebleu.metrics import CHRF, BLEU
 from datasets import (
   SonnetsDataset,
 )
@@ -64,9 +64,10 @@ def model_test_paraphrase(dataloader, model, device):
 
 def test_sonnet(
     test_path='predictions/generated_sonnets.txt',
-    gold_path='data/TRUE_sonnets_held_out.txt'
+    gold_path='data/TRUE_sonnets_held_out_dev.txt'
 ):
     chrf = CHRF()
+    bleu = BLEU()
 
     # get the sonnets
     generated_sonnets = [x[1] for x in SonnetsDataset(test_path)]
@@ -75,6 +76,7 @@ def test_sonnet(
     true_sonnets = true_sonnets[:max_len]
     generated_sonnets = generated_sonnets[:max_len]
 
-    # compute chrf
+    # compute chrf and BLEU
     chrf_score = chrf.corpus_score(generated_sonnets, [true_sonnets])
-    return float(chrf_score.score)
+    bleu_score = bleu.corpus_score(generated_sonnets, [true_sonnets])
+    return {'chrf': float(chrf_score.score), 'bleu': float(bleu_score.score)}

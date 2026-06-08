@@ -55,6 +55,9 @@ class GPT2SentimentClassifier(torch.nn.Module):
 
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
+    # Handout 6.2: apply dropout on the last-token representation before the linear head.
+    # nn.Dropout is parameter-free, so state_dict keys are unchanged and eval() is deterministic.
+    self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
     self.classifier = torch.nn.Linear(config.hidden_size, self.num_labels)
 
 
@@ -67,7 +70,7 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids, attention_mask)
     last_token_hidden = outputs['last_token']
-    logits = self.classifier(last_token_hidden)
+    logits = self.classifier(self.dropout(last_token_hidden))
     return logits
 
 
@@ -313,7 +316,7 @@ def train(args):
 def test(args):
   with torch.no_grad():
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-    saved = torch.load(args.filepath)
+    saved = torch.load(args.filepath, weights_only=False)
     config = saved['model_config']
     model = GPT2SentimentClassifier(config)
     model.load_state_dict(saved['model'])

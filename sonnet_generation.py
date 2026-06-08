@@ -196,10 +196,10 @@ def train(args):
 
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
     try:
-      chrf_score = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
-      print(f"Epoch {epoch}: chrF score on generated sonnets :: {chrf_score:.2f}")
+      scores = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
+      print(f"Epoch {epoch}: chrF :: {scores['chrf']:.2f}, BLEU :: {scores['bleu']:.2f}")
     except Exception as e:
-      print(f"Skipping epoch chrF evaluation: {e}")
+      print(f"Skipping epoch chrF/BLEU evaluation: {e}")
     print('Saving the model...')
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
 
@@ -291,9 +291,9 @@ if __name__ == "__main__":
   train(args)
   generate_submission_sonnets(args)
   try:
-    score = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
-    print(f"Final chrF score: {score:.2f}")
+    scores = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
+    print(f"Final chrF: {scores['chrf']:.2f}, BLEU: {scores['bleu']:.2f}")
   except Exception as e:
-    print(f"Could not compute chrF via evaluation.test_sonnet: {e}")
+    print(f"Could not compute chrF/BLEU via evaluation.test_sonnet: {e}")
 
  
