@@ -129,7 +129,7 @@ class SonnetsDataset(Dataset):
 
   def _load_sonnets(self, file_path):
     """Reads the file and extracts individual sonnets."""
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
       text = f.read()
 
     # Split sonnets based on numbering pattern (e.g., "\n\n1\n\n")

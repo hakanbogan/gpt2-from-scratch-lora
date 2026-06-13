@@ -1,7 +1,7 @@
 from torch import dtype
 
-from config import PretrainedConfig
-from utils import *
+from src.config import PretrainedConfig
+from src.utils import *
 
 
 class GPTPreTrainedModel(nn.Module):
@@ -30,4 +30,3 @@ class GPTPreTrainedModel(nn.Module):
   @property
   def dtype(self) -> dtype:
     return get_parameter_dtype(self)
-

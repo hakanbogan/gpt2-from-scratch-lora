@@ -7,7 +7,7 @@ and architecture details of our GPT-2 model.
 from typing import Union, Tuple, Dict, Any
 import os
 import json
-from utils import CONFIG_NAME, hf_bucket_url, cached_path, is_remote_url
+from src.utils import CONFIG_NAME, hf_bucket_url, cached_path, is_remote_url
 
 
 class PretrainedConfig(object):
@@ -225,6 +225,5 @@ class GPT2Config(PretrainedConfig):
     self.gradient_checkpointing = gradient_checkpointing
     self.position_embedding_type = position_embedding_type
     self.use_cache = use_cache
-
 
 

@@ -14,9 +14,10 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
 
-from models.gpt2 import GPT2Model
-from optimizer import AdamW
+from src.models.gpt2 import GPT2Model
+from src.optimizer import AdamW
 from tqdm import tqdm
+from src.log_experiments import log_classifier_epoch
 
 TQDM_DISABLE = False
 
@@ -305,6 +306,7 @@ def train(args):
 
     train_acc, train_f1, *_ = model_eval(train_dataloader, model, device)
     dev_acc, dev_f1, *_ = model_eval(dev_dataloader, model, device)
+    log_classifier_epoch(config, epoch, train_loss, train_acc, train_f1, dev_acc, dev_f1, data_label='sst')
 
     if dev_acc > best_dev_acc:
       best_dev_acc = dev_acc

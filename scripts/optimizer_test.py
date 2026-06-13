@@ -1,6 +1,13 @@
 import torch
 import numpy as np
-from optimizer import AdamW
+import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.optimizer import AdamW
 
 SEED = 0
 
@@ -26,7 +33,7 @@ def test_optimizer(opt_class) -> torch.Tensor:
     return model.weight.detach()
 
 if __name__ == '__main__':
-    ref = torch.tensor(np.load("optimizer_test.npy"))
+    ref = torch.tensor(np.load(os.path.join(os.path.dirname(__file__), "optimizer_test.npy")))
     actual = test_optimizer(AdamW)
     print(ref)
     print(actual)

@@ -2,10 +2,10 @@ import torch
 from torch import nn
 from transformers import GPT2Model as OpenAIGPT2Model
 
-from config import GPT2Config
-from models.base_gpt import GPTPreTrainedModel
-from modules.gpt2_layer import GPT2Layer
-from utils import get_extended_attention_mask
+from src.config import GPT2Config
+from src.models.base_gpt import GPTPreTrainedModel
+from src.modules.gpt2_layer import GPT2Layer
+from src.utils import get_extended_attention_mask
 
 
 class GPT2Model(GPTPreTrainedModel):
@@ -109,10 +109,15 @@ class GPT2Model(GPTPreTrainedModel):
 
 
   @classmethod
-  def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
+  def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12, **kwargs):
     gpt_model = OpenAIGPT2Model.from_pretrained(model).eval()
-    our_model = GPT2Model(GPT2Config(hidden_size=d, num_hidden_layers=l,num_attention_heads=num_heads,
-                                     intermediate_size=d*3)).eval()
+    our_model = GPT2Model(GPT2Config(
+      hidden_size=d,
+      num_hidden_layers=l,
+      num_attention_heads=num_heads,
+      intermediate_size=d*3,
+      **kwargs
+    )).eval()
 
     # Load word and positional embeddings.
     our_model.word_embedding.load_state_dict(gpt_model.wte.state_dict())
@@ -127,6 +132,10 @@ class GPT2Model(GPTPreTrainedModel):
       l.self_attention.key.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d:d*2]
       l.self_attention.value.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d*2:].T
       l.self_attention.value.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d*2:]
+      l.self_attention.layer_name = f'h.{i}.attn.c_attn'
+      l.self_attention.initialize_lora_from_weight(l.self_attention.query.weight.data, "q")
+      l.self_attention.initialize_lora_from_weight(l.self_attention.key.weight.data, "k")
+      l.self_attention.initialize_lora_from_weight(l.self_attention.value.weight.data, "v")
 
       # Remap final dense layer in MHA.
       l.attention_dense.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.weight'].T

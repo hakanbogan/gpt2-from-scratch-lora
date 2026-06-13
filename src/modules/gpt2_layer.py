@@ -2,7 +2,7 @@ from torch import nn
 
 import torch.nn.functional as F
 
-from modules.attention import CausalSelfAttention
+from src.modules.attention import CausalSelfAttention
 
 class GPT2Layer(nn.Module):
   def __init__(self, config):
@@ -54,4 +54,3 @@ class GPT2Layer(nn.Module):
     hidden_states = self.add(hidden_states, feed_forward_output, self.out_dense, self.out_dropout)
 
     return hidden_states
-

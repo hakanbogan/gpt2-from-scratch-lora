@@ -14,6 +14,7 @@ trains and evaluates your ParaphraseGPT model and writes the required submission
 import argparse
 import random
 import torch
+import time
 
 import numpy as np
 import torch.nn.functional as F
@@ -22,15 +23,17 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets import (
+from src.datasets import (
   ParaphraseDetectionDataset,
   ParaphraseDetectionTestDataset,
   load_paraphrase_data
 )
-from evaluation import model_eval_paraphrase, model_test_paraphrase
-from models.gpt2 import GPT2Model
+from src.evaluation import model_eval_paraphrase, model_test_paraphrase
+from src.models.gpt2 import GPT2Model
+from src.lora_attention import get_attention_and_lora_stats
 
-from optimizer import AdamW
+from src.optimizer import AdamW
+from src.log_experiments import log_paraphrase_epoch
 
 TQDM_DISABLE = False
 
@@ -50,12 +53,33 @@ class ParaphraseGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    self.gpt = GPT2Model.from_pretrained(
+      model=args.model_size,
+      d=args.d,
+      l=args.l,
+      num_heads=args.num_heads,
+      lora_r=getattr(args, 'lora_r', 0),
+      lora_alpha=getattr(args, 'lora_alpha', 1.0),
+      lora_init=getattr(args, 'lora_init', 'normal'),
+      lora_init_method=getattr(args, 'lora_init_method', 'default'),
+      lora_init_scale=getattr(args, 'lora_init_scale', 0.01),
+      lora_svd_scale=getattr(args, 'lora_svd_scale', 0.01),
+    )
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
 
-    # By default, fine-tune the full model.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
+    fine_tune_mode = getattr(args, 'fine_tune_mode', 'full')
+    if fine_tune_mode == 'full':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+    elif fine_tune_mode == 'lora':
+      lora_r = getattr(args, 'lora_r', 0)
+      if lora_r <= 0:
+        raise ValueError('LoRA mode requires --lora_r > 0')
+      for param in self.gpt.parameters():
+        param.requires_grad = False
+      for name, param in self.gpt.named_parameters():
+        if "lora_" in name:
+          param.requires_grad = True
 
   def forward(self, input_ids, attention_mask):
     """
@@ -111,6 +135,14 @@ def train(args):
   model = ParaphraseGPT(args)
   model = model.to(device)
 
+  # Initialize LoRA weights from pretrained if LoRA enabled
+  if hasattr(args, 'lora_r') and args.lora_r > 0 and getattr(args, 'fine_tune_mode', 'full') == 'lora':
+    for i, layer in enumerate(model.gpt.gpt_layers):
+      layer.self_attention.layer_name = f'h.{i}.attn.c_attn'
+      layer.self_attention.initialize_lora_from_weight(layer.self_attention.query.weight.data, "q")
+      layer.self_attention.initialize_lora_from_weight(layer.self_attention.key.weight.data, "k")
+      layer.self_attention.initialize_lora_from_weight(layer.self_attention.value.weight.data, "v")
+
   lr = args.lr
   optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.)
   best_dev_acc = 0
@@ -118,6 +150,7 @@ def train(args):
   # Run for the specified number of epochs.
   for epoch in range(args.epochs):
     model.train()
+    epoch_start = time.time()
     train_loss = 0
     num_batches = 0
     for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
@@ -139,8 +172,11 @@ def train(args):
       num_batches += 1
 
     train_loss = train_loss / num_batches
+    epoch_time = time.time() - epoch_start
 
     dev_acc, dev_f1, *_ = model_eval_paraphrase(para_dev_dataloader, model, device)
+    lora_stats = get_attention_and_lora_stats(model) if getattr(args, 'fine_tune_mode', 'full') == 'lora' else None
+    log_paraphrase_epoch(args, epoch, train_loss, dev_acc, dev_f1, lora_stats=lora_stats, training_time=epoch_time)
 
     if dev_acc > best_dev_acc:
       best_dev_acc = dev_acc
@@ -205,6 +241,18 @@ def get_args():
   parser.add_argument("--model_size", type=str,
                       help="The model size as specified on hugging face. DO NOT use the xl model.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large'], default='gpt2')
+  parser.add_argument("--fine_tune_mode", type=str, choices=['full', 'lora'], default='full',
+                      help="Whether to fine-tune the full model or only LoRA adapters.")
+  parser.add_argument("--lora_r", type=int, default=0, help="LoRA rank; use 0 to disable LoRA.")
+  parser.add_argument("--lora_alpha", type=float, default=32.0, help="LoRA scaling alpha.")
+  parser.add_argument("--lora_init", type=str, choices=['normal','uniform','zeros','xavier_uniform'],
+                      default='normal', help="Initialization for LoRA A matrices.")
+  parser.add_argument("--lora_init_method", type=str, choices=['default','weight_dist','svd'],
+                      default='default', help="Method used to initialize LoRA matrices.")
+  parser.add_argument("--lora_init_scale", type=float, default=0.01,
+                      help="Scale factor for weight distribution LoRA initialization.")
+  parser.add_argument("--lora_svd_scale", type=float, default=0.01,
+                      help="Scale factor for SVD-based LoRA initialization.")
 
   args = parser.parse_args()
   return args
@@ -231,6 +279,10 @@ def add_arguments(args):
 
 if __name__ == "__main__":
   args = get_args()
+  # If not using LoRA fine-tuning, ensure lora_r is disabled.
+  if args.fine_tune_mode in ('full', 'last-layer'):
+    args.lora_r = 0
+
   args.filepath = f'{args.epochs}-{args.lr}-paraphrase.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
   train(args)

@@ -10,16 +10,16 @@ detection and sonnet generation. You will implement extensions to improve your m
 
 In broad strokes, Part 1 of this project targets:
 
-* modules/attention.py: Missing code blocks.✅
-* modules/gpt2_layer.py: Missing code blocks.✅
-* models/gpt2.py: Missing code blocks.✅
+* src/modules/attention.py: Missing code blocks.✅
+* src/modules/gpt2_layer.py: Missing code blocks.✅
+* src/models/gpt2.py: Missing code blocks.✅
 * classifier.py: Missing code blocks.✅
-* optimizer.py: Missing code blocks.✅
+* src/optimizer.py: Missing code blocks.✅
 
 To test Part 1, you will run:
 
-* `optimizer_test.py`: To test your implementation of `optimizer.py`.✅
-* `sanity_check.py`: To test your implementation of GPT models.✅
+* `scripts/optimizer_test.py`: To test your implementation of `src/optimizer.py`.✅
+* `scripts/sanity_check.py`: To test your implementation of GPT models.✅
 * `classifier.py` : To perform sentiment classification using your models.✅
   * Last-Layer-output in results dic✅
   * Full-Model(layer)-output in results dic✅
@@ -35,6 +35,7 @@ To test Part 2, you will run:
 * `sonnet_generation.py`: To perform sonnet generation.
   ** it can be runnable✅
   ** must be added Chrf and Blue measurement.
+  ** checkpoints are saved under `results/sonnet_generation_checkpoints/` with run-specific folder names.
 
 Part 3, One extension must be added and be modified:
 * look at 7.4 extension 

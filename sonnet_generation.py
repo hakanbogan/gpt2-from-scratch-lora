@@ -8,8 +8,10 @@ trains your SonnetGPT model and writes the required submission files.
 '''
 
 import argparse
+import os
 import random
 import torch
+import time
 
 import numpy as np
 import torch.nn.functional as F
@@ -20,15 +22,42 @@ from tqdm import tqdm
 from transformers import GPT2Tokenizer
 from einops import rearrange
 
-from datasets import (
+from src.datasets import (
   SonnetsDataset,
 )
-from models.gpt2 import GPT2Model
+from src.models.gpt2 import GPT2Model
 
-from optimizer import AdamW
-from evaluation import test_sonnet
+from src.optimizer import AdamW
+from src.evaluation import test_sonnet
+from src.lora_attention import print_attention_and_lora_stats, get_attention_and_lora_stats
+from src.log_experiments import log_sonnet_epoch
 
 TQDM_DISABLE = False
+
+
+def make_safe_name(value):
+  return str(value).replace('/', '-').replace('\\', '-').replace('.', 'p')
+
+
+def build_checkpoint_dir(args):
+  run_parts = [
+    'sonnet_generation',
+    args.fine_tune_mode,
+    args.model_size,
+    f'epochs{args.epochs}',
+    f'lr{make_safe_name(args.lr)}',
+  ]
+  if args.fine_tune_mode == 'lora':
+    run_parts.extend([
+      f'r{args.lora_r}',
+      f'alpha{make_safe_name(args.lora_alpha)}',
+      args.lora_init_method,
+    ])
+  return os.path.join('results', 'sonnet_generation_checkpoints', '_'.join(run_parts))
+
+
+def get_checkpoint_path(args, epoch):
+  return os.path.join(args.checkpoint_dir, f'epoch_{epoch}_{args.filepath}')
 
 
 # Fix the random seed.
@@ -47,7 +76,18 @@ class SonnetGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    self.gpt = GPT2Model.from_pretrained(
+      model=args.model_size,
+      d=args.d,
+      l=args.l,
+      num_heads=args.num_heads,
+      lora_r=args.lora_r,
+      lora_alpha=args.lora_alpha,
+      lora_init=args.lora_init,
+      lora_init_method=args.lora_init_method,
+      lora_init_scale=args.lora_init_scale,
+      lora_svd_scale=args.lora_svd_scale,
+    )
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -61,6 +101,14 @@ class SonnetGPT(nn.Module):
         param.requires_grad = True
       for param in self.gpt.final_layer_norm.parameters():
         param.requires_grad = True
+    elif args.fine_tune_mode == 'lora':
+      if args.lora_r <= 0:
+        raise ValueError('LoRA mode requires --lora_r > 0')
+      for param in self.gpt.parameters():
+        param.requires_grad = False
+      for name, param in self.gpt.named_parameters():
+        if "lora_" in name:
+          param.requires_grad = True
     else:
       raise ValueError(f'Unsupported fine-tune mode: {args.fine_tune_mode}')
 
@@ -130,6 +178,7 @@ class SonnetGPT(nn.Module):
 
 
 def save_model(model, optimizer, args, filepath):
+  os.makedirs(os.path.dirname(filepath), exist_ok=True)
   save_info = {
     'model': model.state_dict(),
     'optim': optimizer.state_dict(),
@@ -164,6 +213,7 @@ def train(args):
   # Run for the specified number of epochs.
   for epoch in range(args.epochs):
     model.train()
+    epoch_start = time.time()
     train_loss = 0
     num_batches = 0
 
@@ -186,28 +236,47 @@ def train(args):
       num_batches += 1
 
     train_loss = train_loss / num_batches
+    epoch_time = time.time() - epoch_start
     print(f"Epoch {epoch}: train loss :: {train_loss :.3f}.")
     print('Generating several output sonnets...')
     model.eval()
+    generated_sonnets = []
     for batch in held_out_sonnet_dataset:
       encoding = model.tokenizer(batch[1], return_tensors='pt', padding=True, truncation=True).to(device)
       output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)
-      print(f'{batch[1]}{output[1]}\n\n')
+      generated_output = output[1]
+      generated_sonnets.append((batch[0], generated_output))
+
+    with open(args.sonnet_out, "w+", encoding="utf-8") as f:
+      f.write(f"--Generated Sonnets-- \n\n")
+      for sonnet in generated_sonnets:
+        f.write(f"\n{sonnet[0]}\n")
+        f.write(sonnet[1])
 
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
+    chrF = None
+    BLEU = None
+    note = None
     try:
       scores = test_sonnet(test_path=args.sonnet_out, gold_path=args.true_sonnet_path)
-      print(f"Epoch {epoch}: chrF :: {scores['chrf']:.2f}, BLEU :: {scores['bleu']:.2f}")
+      chrF = scores['chrf']
+      BLEU = scores['bleu']
+      print(f"Epoch {epoch}: chrF :: {chrF:.2f}, BLEU :: {BLEU:.2f}")
     except Exception as e:
+      note = f"Evaluation skipped: {e}"
       print(f"Skipping epoch chrF/BLEU evaluation: {e}")
+
+    lora_stats = get_attention_and_lora_stats(model) if args.fine_tune_mode == 'lora' else None
+    log_sonnet_epoch(args, epoch, train_loss, chrF, BLEU, lora_stats=lora_stats, training_time=epoch_time, note=note)
     print('Saving the model...')
-    save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
+    save_model(model, optimizer, args, get_checkpoint_path(args, epoch))
+    print_attention_and_lora_stats(model, args)
 
 
 @torch.no_grad()
 def generate_submission_sonnets(args):
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-  saved = torch.load(f'{args.epochs-1}_{args.filepath}', weights_only=False)
+  saved = torch.load(get_checkpoint_path(args, args.epochs - 1), weights_only=False)
 
   model = SonnetGPT(saved['args'])
   model.load_state_dict(saved['model'])
@@ -226,13 +295,13 @@ def generate_submission_sonnets(args):
     full_sonnet = f'{decoded_output}\n\n'
     generated_sonnets.append((sonnet_id, full_sonnet))
 
-    print(f'{decoded_output}\n\n')
-
-  with open(args.sonnet_out, "w+") as f:
+  with open(args.sonnet_out, "w+", encoding="utf-8") as f:
     f.write(f"--Generated Sonnets-- \n\n")
     for sonnet in generated_sonnets:
       f.write(f"\n{sonnet[0]}\n")
       f.write(sonnet[1])
+
+  print_attention_and_lora_stats(model, saved['args'])
 
 
 
@@ -240,7 +309,7 @@ def get_args():
   parser = argparse.ArgumentParser()
 
   parser.add_argument("--sonnet_path", type=str, default="data/sonnets.txt")
-  parser.add_argument("--held_out_sonnet_path", type=str, default="data/sonnets_held_out.txt")
+  parser.add_argument("--held_out_sonnet_path", type=str, default="data/sonnets_held_out_dev.txt")
   parser.add_argument("--sonnet_out", type=str, default="predictions/generated_sonnets.txt")
 
   parser.add_argument("--seed", type=int, default=11711)
@@ -251,13 +320,25 @@ def get_args():
   parser.add_argument("--temperature", type=float, help="softmax temperature.", default=1.2)
   parser.add_argument("--top_p", type=float, help="Cumulative probability distribution for nucleus sampling.",
                       default=0.9)
+  parser.add_argument("--lora_r", type=int, default=4, help="LoRA rank; use 0 to disable LoRA.")
+   # if you set this to 0, the model will be trained in full fine-tuning mode.
+   # and you not see any LoRA statistics in the logs if you do this.
+  parser.add_argument("--lora_alpha", type=float, default=32.0, help="LoRA scaling alpha.")
+  parser.add_argument("--lora_init", type=str, choices=['normal','uniform','zeros','xavier_uniform'],
+                      default='normal', help="Initialization for LoRA A matrices.")
+  parser.add_argument("--lora_init_method", type=str, choices=['default','weight_dist','svd'],
+                      default='default', help="Method used to initialize LoRA matrices.")
+  parser.add_argument("--lora_init_scale", type=float, default=0.01,
+                      help="Scale factor for weight distribution LoRA initialization.")
+  parser.add_argument("--lora_svd_scale", type=float, default=0.01,
+                      help="Scale factor for SVD-based LoRA initialization.")
 
   parser.add_argument("--batch_size", help='The training batch size.', type=int, default=8)
   parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
   parser.add_argument("--model_size", type=str, help="The model size as specified on hugging face.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], default='gpt2')
-  parser.add_argument("--fine_tune_mode", type=str, choices=['full', 'last-layer'], default='full',
-                      help="Whether to fine-tune the full GPT model or only the last transformer layer.")
+  parser.add_argument("--fine_tune_mode", type=str, choices=['full', 'last-layer', 'lora'], default='full',
+                      help="Whether to fine-tune the full model, only the last transformer layer, or only LoRA adapters.")
   parser.add_argument("--true_sonnet_path", type=str, default="data/TRUE_sonnets_held_out_dev.txt",
                       help="Gold sonnets file used to compute chrF for generated output.")
 
@@ -286,7 +367,12 @@ def add_arguments(args):
 
 if __name__ == "__main__":
   args = get_args()
-  args.filepath = f'{args.epochs}-{args.lr}-sonnet.pt'  # Save path.
+  # If we are not in LoRA fine-tune mode, force lora_r to 0 so adapters are disabled.
+  if args.fine_tune_mode in ('full', 'last-layer'):
+    args.lora_r = 0
+
+  args.filepath = f'{args.epochs}-{args.lr}-sonnet.pt'
+  args.checkpoint_dir = build_checkpoint_dir(args)
   seed_everything(args.seed)  # Fix the seed for reproducibility.
   train(args)
   generate_submission_sonnets(args)
