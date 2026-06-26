@@ -7,6 +7,9 @@ extension. Term project for **CENG534 Natural Language Processing**, İzmir Inst
 
 **Authors:** Hakan Boğan, İlker Yayalar
 
+**Report:** [`CENG534_Project_Article.pdf`](CENG534_Project_Article.pdf) — the full write-up
+(methodology, experiments, statistics tables, figures, and the LoRA ablation).
+
 ## Overview
 
 The project has three parts:
@@ -115,6 +118,9 @@ line with the dataset usage policy.
 `weight_dist` initialization reaches chrF 40.09 on the held-out sonnets — 97.9% of the full
 fine-tuning score — while every LoRA variant outperforms last-layer fine-tuning at a fraction of its
 trainable-parameter cost.
+
+The full quantitative analysis, statistics tables, figures, and the per-task LoRA ablations are in
+the [report](CENG534_Project_Article.pdf).
 
 ## Preparing a submission
 
